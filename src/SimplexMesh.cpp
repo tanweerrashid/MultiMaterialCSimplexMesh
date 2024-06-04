@@ -19,7 +19,9 @@
 #include <vtkSTLWriter.h>
 #include <vtkImageCast.h>
 
-#include "Deformation.h"
+#include <vtkSmartPointer.h>
+
+#include "deformation.h"
 
 
 const bool USE_ISOTROPICDAMPING=false;
@@ -323,6 +325,8 @@ cells[index][0]=nb_p;
 
 int CSimplexMesh::GetCell(int index,int* f) {memcpy(f,cells[index]+1,cells[index][0]*sizeof(int)); return cells[index][0];}
 int* CSimplexMesh::GetCell(int index) {return cells[index];}
+
+
 int** CSimplexMesh::GetCells() {return cells;}
 void CSimplexMesh::DeleteCell(int index) {} // virtual
 void CSimplexMesh::InsertNextCell(int* f) {}  // virtual
@@ -337,14 +341,14 @@ void CSimplexMesh::SaveVTKMesh(const char* filename,int lift)
 vtkPolyData* polydata=GetPolyData(lift);
 
 vtkPolyDataNormals *normals=vtkPolyDataNormals::New();
-	normals->SetInput(polydata);
+	normals->SetInputData(polydata);
 	normals->SplittingOff();
 	normals->ConsistencyOn();
 	normals->ComputePointNormalsOn();
 	if(Flipped) normals->FlipNormalsOn();
 
 	vtkPolyDataWriter* writer=vtkPolyDataWriter::New();
-	writer->SetInput(normals->GetOutput());
+	writer->SetInputData(normals->GetOutput());
     writer->SetFileName(filename);
     writer->SetFileType(1);
     writer->Write();
@@ -359,14 +363,14 @@ void CSimplexMesh::SaveSTLMesh(const char* filename,int lift)
 vtkPolyData* polydata=GetPolyData(lift);
 
 vtkPolyDataNormals *normals=vtkPolyDataNormals::New();
-	normals->SetInput(polydata);
+	normals->SetInputData(polydata);
 	normals->SplittingOff();
 	normals->ConsistencyOn();
 	normals->ComputePointNormalsOn();
 	if(Flipped) normals->FlipNormalsOn();
 
 vtkSTLWriter* writer=vtkSTLWriter::New();
-	writer->SetInput(normals->GetOutput());
+	writer->SetInputData(normals->GetOutput());
     writer->SetFileName(filename);
     writer->SetFileType(1);
     writer->Write();
@@ -659,32 +663,56 @@ else
 
 
 void CSimplexMesh::AllocatePointMaterialIndices() {
-	materialIndices = new int*[GetNumberOfPoints()];
+	//materialIndices = new int*[GetNumberOfPoints()];
 
-	// First two entries are material indices, and the last one is a scalar value. 
-	// Initialize with default material indices 0 and 2, and scalar value 5
-	// 0 and 2 are used for legacy purposes. 
-	// MM2M DC generates triangular meshes with material indices 0 and 2 for each triangular cell as default (single material mesh) and scalar value of 5. 
+	//// First two entries are material indices, and the last one is a scalar value. 
+	//// Initialize with default material indices 0 and 2, and scalar value 5
+	//// 0 and 2 are used for legacy purposes. 
+	//// MM2M DC generates triangular meshes with material indices 0 and 2 for each triangular cell as default (single material mesh) and scalar value of 5. 
+	//for (int i = 0; i < GetNumberOfPoints(); i++) {
+	//	materialIndices[i] = new int[3];
+	//	materialIndices[i][0] = 0;
+	//	materialIndices[i][1] = 2;
+	//	materialIndices[i][2] = 5;
+	//}
+
+	//hasMultiMaterialIndices = true;
+
+	materialIndices = new int[3 * GetNumberOfPoints()]; 
 	for (int i = 0; i < GetNumberOfPoints(); i++) {
-		materialIndices[i] = new int[3];
-		materialIndices[i][0] = 0;
-		materialIndices[i][1] = 2;
-		materialIndices[i][2] = 5;
+		materialIndices[3 * i + 0] = 0;
+		materialIndices[3 * i + 1] = 2;
+		materialIndices[3 * i + 2] = 5;
 	}
+	hasMultiMaterialIndices = true;
 }
 
 int* CSimplexMesh::GetPointMaterialIndices(int index) {
+	//int *ret = new int[3];
+	//ret[0] = materialIndices[index][0];
+	//ret[1] = materialIndices[index][1];
+	//ret[2] = materialIndices[index][2];
+	//return ret;
+
 	int *ret = new int[3];
-	ret[0] = materialIndices[index][0];
-	ret[1] = materialIndices[index][1];
-	ret[2] = materialIndices[index][2];
+	ret[0] = materialIndices[3 * index + 0];
+	ret[1] = materialIndices[3 * index + 1];
+	ret[2] = materialIndices[3 * index + 2];
 	return ret;
 }
 
 void CSimplexMesh::SetPointMaterialIndices(int index, int mat0, int mat1, int scalar) {
-	materialIndices[index][0] = mat0;
-	materialIndices[index][1] = mat1;
-	materialIndices[index][2] = scalar;
+	materialIndices[3 * index + 0] = mat0;
+	materialIndices[3 * index + 1] = mat1;
+	materialIndices[3 * index + 2] = scalar;
+}
+
+bool CSimplexMesh::GetHasMultiMaterialIndices() {
+	return hasMultiMaterialIndices;
+}
+
+void CSimplexMesh::SetHasMultiMaterialIndices(bool b) {
+	hasMultiMaterialIndices = b;
 }
 
 /**

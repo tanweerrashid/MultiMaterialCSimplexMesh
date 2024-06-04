@@ -3275,14 +3275,12 @@ void GetIPForces(P_float* f, bool *ign, P_float *E, int nbpoints, int depth, P_f
 		// Line files were written out in VTK PolyData format in GetGradEnergies()
 		// Here, we append those files with color values from E[] array. 
 		//std::stringstream ss;
-		//ss << "C:\\Users\\Tanweer Rashid\\Desktop\\SN-STN-LargerSB\\DeformResults\\Lines\\Line_Point_" << i << ".vtk";
+		//ss << "E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\MultiMaterial_Deformation_TwoBoxes\\Lines\\Line_Point_" << i << ".vtk";
 		//ofstream file(ss.str().c_str(), ios::app);	
 		//std::vector<double> Es;
 
 		//cout << "Point " << i << ": ";
 		for (j = -depth; j <= depth; j++)   {
-			
-			
 			//Es.push_back(E[i * (2 * depth + 1) + j + depth]);
 			//cout << E[i * (2 * depth + 1) + j + depth] << ", ";
 			
@@ -3388,9 +3386,6 @@ void GetGradEnergies(P_float* E, int nb_points, P_float* points, P_float* normal
 			p[2] = points[3 * i + 2] - (P_float)depth * n[2];
 			
 			index = i * (2 * depth + 1);
-
-			//std::vector<double*> line;
-
 			if (p[0] > ROI[0] && p[0] < ROI[1] && p[1] > ROI[2] && p[1] < ROI[3] && p[2] > ROI[4] && p[2] < ROI[5]) {
 				for (j = 0; j < 2 * depth + 1; j++) {
 					val = Interpolation(MRI_grad, p, interpolationmode);
@@ -3398,39 +3393,12 @@ void GetGradEnergies(P_float* E, int nb_points, P_float* points, P_float* normal
 						if (E[index] == 1E10) 
 							E[index] = -(P_float)val;
 
-
-					//double *temp2 = new double[3]; 
-					//temp2[0] = p[0]; temp2[1] = p[1]; temp2[2] = p[2];
-					//line.push_back(temp2);
-
 					p[0] += n[0];	
 					p[1] += n[1];
 					p[2] += n[2];
 
 					index++;
 				}
-
-
-				//std::stringstream ss;
-				//ss << "C:\\Users\\Tanweer Rashid\\Desktop\\SN-STN-LargerSB\\DeformResults\\Lines\\Line_Point_" << i << ".vtk";
-
-				//ofstream f;
-				//f.open(ss.str().c_str());
-
-				//f << "# vtk DataFile Version 3.0\nvtk output\nASCII\nDATASET POLYDATA\nPOINTS " << line.size() << " float\n";
-				//for (int q = 0; q < line.size(); q++) {
-				//	double *qp = line.at(q);
-				//	f << qp[0] << " " << qp[1] << " " << qp[2] << "\n";
-				//}
-				//f << "\nLINES 1 " << (line.size() + 1) << "\n";
-				//f << line.size() << " ";
-				//for (int q = 0; q < line.size(); q++) 
-				//	f << q << " ";
-				//
-				//f << "\n";
-				//f.close();
-
-
 			}
 		}
 	}

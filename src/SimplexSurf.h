@@ -303,8 +303,15 @@ public:
 
 	P_float getSurface();
 	P_float getSurfaces_cell(int index);
-	
+	P_float* getSurfaces_cell();
+
+	bool IsPointOn2ManifoldEdge(int index);
+	void UpdatePointsOn2ManifoldEdgeArray();
+	void RemovePointsFromPointsOn2ManifoldEdgeArray(int index);
+
 private:	
+
+	std::vector<bool> PointOn2ManifoldEdge;
 
 	/*int* flagmultires;
 	void SetFlagMultires(int index,int val);

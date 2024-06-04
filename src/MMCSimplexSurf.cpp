@@ -1,13 +1,11 @@
 
-#include <float.h>
-
 #include "MMCSimplexSurf.h"
 
 MMCSimplexSurf::MMCSimplexSurf(CSimplexSurf** m, int num) {
 	meshes = m;
 	numberOfMeshes = num;
 
-	//meshes[0]->UpdatePointsOn2ManifoldEdgeArray();
+	meshes[0]->UpdatePointsOn2ManifoldEdgeArray();
 }
 
 MMCSimplexSurf::~MMCSimplexSurf() {
@@ -119,12 +117,12 @@ bool MMCSimplexSurf::IsPointOn2ManifoldEdge(int pointIndex, vtkSmartPointer<vtkP
 }
 
 bool MMCSimplexSurf::ApplyTO1_Test(int p1, int p2, int meshIndex) {
-	/*bool ret = false;
+	bool ret = false;
 	// Ensure that the two points are on 2 manifold edges. 
 	if (meshes[meshIndex]->IsPointOn2ManifoldEdge(p1) == true && meshes[meshIndex]->IsPointOn2ManifoldEdge(p2) == true) {
 		ret = meshes[meshIndex]->TO1_test(p1, p2);
 	}
-	return ret;*/
+	return ret;
 }
 //
 //bool MMCSimplexSurf::ApplyTO1_Test(int p1, int p2, int meshIndex) {

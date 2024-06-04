@@ -1,5 +1,5 @@
 //#include "StdAfx.h"
-#include "SimplexMesh.h"
+#include ".\simplexmesh.h"
 #include "math.h"
 #include "float.h"
 #include <ostream>
@@ -24,7 +24,7 @@
 #include <vtkCharArray.h>
 //#include "perftimer.h"
 
-#include "Deformation.h"
+#include "deformation.h"
 
 const P_float MIN_RADIUS=1.5;
 const bool LIFTING=true;
@@ -127,6 +127,8 @@ free(DOPPointTree);
 for(i=0;i<MRI_nb;i++) FreeMRI(i);
 if(MRI_nb!=0) {free(MRI); free(MRI_grad); free(MRI_Transform); free(MRI_Spacing); free(MRI_Normals); free(MRI_OffsetTransform);	free(MRI_ROI); free(MRI_Type);}
 if(Elongations_ref!=NULL) free(Elongations_ref); if(Elongations_refindex!=NULL) free(Elongations_refindex);
+
+free(materialIndices);
 }
 
 void CSimplexSurf::Allocate(int nb_p,int nb_c)
@@ -420,6 +422,7 @@ CSimplexSurf* CSimplexSurf::IncreaseResolution() {
 			mesh->InsertFrontierConstraintPoint((P_float)dp[0], (P_float)dp[1], (P_float)dp[2]);
 		}
 
+		
 		// update
 		mesh->UpdateNeighbors();
 		mesh->Equilibrium();
@@ -1529,48 +1532,90 @@ neighbors2=(int***)realloc(neighbors2,nb_points*sizeof(int**)); neighbors2[nb_po
 
 void CSimplexSurf::DeletePoint(int index)
 {
-int i,j;
-for(i=0;i<nb_cells;i++) for(j=0;j<cells[i][0];j++) if(cells[i][j+1]>index) cells[i][j+1]=cells[i][j+1]-1;
-for(i=0;i<nb_points;i++) for(j=0;j<3;j++) if(neighbors[3*i+j]>index) neighbors[3*i+j]=neighbors[3*i+j]-1;
+	int i,j;
+	for(i=0;i<nb_cells;i++) for(j=0;j<cells[i][0];j++) if(cells[i][j+1]>index) cells[i][j+1]=cells[i][j+1]-1;
+	for(i=0;i<nb_points;i++) for(j=0;j<3;j++) if(neighbors[3*i+j]>index) neighbors[3*i+j]=neighbors[3*i+j]-1;
 
-nb_points--;
+	nb_points--;
 
-P_float* buff=(P_float*)malloc(3*(nb_points-index)*sizeof(P_float));
+	P_float* buff=(P_float*)malloc(3*(nb_points-index)*sizeof(P_float));
 
-memcpy(buff,points+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(points+3*index,buff,3*(nb_points-index)*sizeof(P_float)); points=(P_float*)realloc(points,3*nb_points*sizeof(P_float));
-memcpy(buff,points_tm1+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(points_tm1+3*index,buff,3*(nb_points-index)*sizeof(P_float)); points_tm1=(P_float*)realloc(points_tm1,3*nb_points*sizeof(P_float));
-memcpy(buff,speeds+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(speeds+3*index,buff,3*(nb_points-index)*sizeof(P_float)); speeds=(P_float*)realloc(speeds,3*nb_points*sizeof(P_float));
-memcpy(buff,speeds_tm1+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(speeds_tm1+3*index,buff,3*(nb_points-index)*sizeof(P_float)); speeds_tm1=(P_float*)realloc(speeds_tm1,3*nb_points*sizeof(P_float));
-memcpy(buff,externalforces+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(externalforces+3*index,buff,3*(nb_points-index)*sizeof(P_float)); externalforces=(P_float*)realloc(externalforces,3*nb_points*sizeof(P_float)); 
-memcpy(buff,mass_inv+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(mass_inv+3*index,buff,3*(nb_points-index)*sizeof(P_float)); mass_inv=(P_float*)realloc(mass_inv,3*nb_points*sizeof(P_float));
-memcpy(buff,mass+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(mass+3*index,buff,3*(nb_points-index)*sizeof(P_float)); mass=(P_float*)realloc(mass,3*nb_points*sizeof(P_float));
-memcpy(buff,Val_p+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(Val_p+3*index,buff,3*(nb_points-index)*sizeof(P_float)); Val_p=(P_float*)realloc(Val_p,3*nb_points*sizeof(P_float));
-free(buff);
+	memcpy(buff,points+3*(index+1),3*(nb_points-index)*sizeof(P_float)); 
+	memcpy(points+3*index,buff,3*(nb_points-index)*sizeof(P_float)); 
+	points=(P_float*)realloc(points,3*nb_points*sizeof(P_float));
+	
+	
+	memcpy(buff,points_tm1+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(points_tm1+3*index,buff,3*(nb_points-index)*sizeof(P_float)); points_tm1=(P_float*)realloc(points_tm1,3*nb_points*sizeof(P_float));
+	memcpy(buff,speeds+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(speeds+3*index,buff,3*(nb_points-index)*sizeof(P_float)); speeds=(P_float*)realloc(speeds,3*nb_points*sizeof(P_float));
+	memcpy(buff,speeds_tm1+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(speeds_tm1+3*index,buff,3*(nb_points-index)*sizeof(P_float)); speeds_tm1=(P_float*)realloc(speeds_tm1,3*nb_points*sizeof(P_float));
+	memcpy(buff,externalforces+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(externalforces+3*index,buff,3*(nb_points-index)*sizeof(P_float)); externalforces=(P_float*)realloc(externalforces,3*nb_points*sizeof(P_float)); 
+	memcpy(buff,mass_inv+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(mass_inv+3*index,buff,3*(nb_points-index)*sizeof(P_float)); mass_inv=(P_float*)realloc(mass_inv,3*nb_points*sizeof(P_float));
+	memcpy(buff,mass+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(mass+3*index,buff,3*(nb_points-index)*sizeof(P_float)); mass=(P_float*)realloc(mass,3*nb_points*sizeof(P_float));
+	memcpy(buff,Val_p+3*(index+1),3*(nb_points-index)*sizeof(P_float)); memcpy(Val_p+3*index,buff,3*(nb_points-index)*sizeof(P_float)); Val_p=(P_float*)realloc(Val_p,3*nb_points*sizeof(P_float));
+	free(buff);
 
-P_float** buffp=(P_float**)malloc((nb_points-index)*sizeof(P_float*));
-memcpy(buffp,mass_constraint+(index+1),(nb_points-index)*sizeof(P_float*)); memcpy(mass_constraint+index,buffp,(nb_points-index)*sizeof(P_float*)); mass_constraint=(P_float**)realloc(mass_constraint,nb_points*sizeof(P_float*));
-free(buffp);
+	P_float** buffp=(P_float**)malloc((nb_points-index)*sizeof(P_float*));
+	memcpy(buffp,mass_constraint+(index+1),(nb_points-index)*sizeof(P_float*)); memcpy(mass_constraint+index,buffp,(nb_points-index)*sizeof(P_float*)); mass_constraint=(P_float**)realloc(mass_constraint,nb_points*sizeof(P_float*));
+	free(buffp);
 
-int* buffi=(int*)malloc(3*(nb_points-index)*sizeof(int));
-memcpy(buffi,neighbors+3*(index+1),3*(nb_points-index)*sizeof(int)); memcpy(neighbors+3*index,buffi,3*(nb_points-index)*sizeof(int)); neighbors=(int*)realloc(neighbors,3*nb_points*sizeof(int)); 
-memcpy(buffi,neighbors_c+3*(index+1),3*(nb_points-index)*sizeof(int)); memcpy(neighbors_c+3*index,buffi,3*(nb_points-index)*sizeof(int)); neighbors_c=(int*)realloc(neighbors_c,3*nb_points*sizeof(int)); 
-memcpy(buffi,attached_point+(index+1),(nb_points-index)*sizeof(int)); memcpy(attached_point+index,buffi,(nb_points-index)*sizeof(int)); attached_point=(int*)realloc(attached_point,nb_points*sizeof(int));  
-free(buffi);
+	int* buffi=(int*)malloc(3*(nb_points-index)*sizeof(int));
+	memcpy(buffi,neighbors+3*(index+1),3*(nb_points-index)*sizeof(int)); memcpy(neighbors+3*index,buffi,3*(nb_points-index)*sizeof(int)); neighbors=(int*)realloc(neighbors,3*nb_points*sizeof(int)); 
+	memcpy(buffi,neighbors_c+3*(index+1),3*(nb_points-index)*sizeof(int)); memcpy(neighbors_c+3*index,buffi,3*(nb_points-index)*sizeof(int)); neighbors_c=(int*)realloc(neighbors_c,3*nb_points*sizeof(int)); 
+	memcpy(buffi,attached_point+(index+1),(nb_points-index)*sizeof(int)); memcpy(attached_point+index,buffi,(nb_points-index)*sizeof(int)); attached_point=(int*)realloc(attached_point,nb_points*sizeof(int));  
+	free(buffi);
 
-if(axiallinks!=NULL) axiallinks=(AXIALLINK*)realloc(axiallinks,nb_points*sizeof(AXIALLINK)); 
-surfaces=(P_float*)realloc(surfaces,nb_points*sizeof(P_float)); 
-//volumes=(P_float*)realloc(volumes,nb_points*sizeof(P_float)); 
-h=(P_float*)realloc(h,nb_points*sizeof(P_float)); 
-params=(P_float*)realloc(params,3*nb_points*sizeof(P_float)); 
-//params_multires=(P_float*)realloc(params_multires,3*nb_points*sizeof(P_float)); 
-forces=(P_float*)realloc(forces,3*nb_points*sizeof(P_float)); 
-df_p=(P_float*)realloc(df_p,6*nb_points*sizeof(P_float)); 
-df_s=(P_float*)realloc(df_s,6*nb_points*sizeof(P_float)); 
-normals=(P_float*)realloc(normals,3*nb_points*sizeof(P_float)); 
-if(normals2!=NULL) normals2=(P_float*)realloc(normals2,3*nb_points*sizeof(P_float)); 
-neighbors2=(int***)realloc(neighbors2,nb_points*sizeof(int**)); 
-constraintpointsforces=(P_float*)realloc(constraintpointsforces,4*nb_points*sizeof(P_float)); 
-externalforces_ign=(bool*)realloc(externalforces_ign,nb_points*sizeof(bool)); 
+	if(axiallinks!=NULL) axiallinks=(AXIALLINK*)realloc(axiallinks,nb_points*sizeof(AXIALLINK)); 
+	surfaces=(P_float*)realloc(surfaces,nb_points*sizeof(P_float)); 
+	//volumes=(P_float*)realloc(volumes,nb_points*sizeof(P_float)); 
+	h=(P_float*)realloc(h,nb_points*sizeof(P_float)); 
+	params=(P_float*)realloc(params,3*nb_points*sizeof(P_float)); 
+	//params_multires=(P_float*)realloc(params_multires,3*nb_points*sizeof(P_float)); 
+	forces=(P_float*)realloc(forces,3*nb_points*sizeof(P_float)); 
+	df_p=(P_float*)realloc(df_p,6*nb_points*sizeof(P_float)); 
+	df_s=(P_float*)realloc(df_s,6*nb_points*sizeof(P_float)); 
+	normals=(P_float*)realloc(normals,3*nb_points*sizeof(P_float)); 
+	if(normals2!=NULL) normals2=(P_float*)realloc(normals2,3*nb_points*sizeof(P_float)); 
+	neighbors2=(int***)realloc(neighbors2,nb_points*sizeof(int**)); 
+	constraintpointsforces=(P_float*)realloc(constraintpointsforces,4*nb_points*sizeof(P_float)); 
+	externalforces_ign=(bool*)realloc(externalforces_ign,nb_points*sizeof(bool)); 
+
+	// Remove material indices as well
+	// First make sure that material indices array is polulated. 
+	//if (GetHasMultiMaterialIndices() ==  true) {
+	//	int **newPointIndices = new int*[GetNumberOfPoints()];
+	//	int counter = 0;
+
+	//	// Copy all material indices, except index, into a new array.
+	//	for (int q = 0; q < GetNumberOfPoints() + 1; q++) {
+	//		if (q != index) {
+	//			newPointIndices[counter] = new int[3];
+
+	//			int *m = GetPointMaterialIndices(q);
+	//			newPointIndices[counter][0] = m[0];
+	//			newPointIndices[counter][1] = m[1];
+	//			newPointIndices[counter][2] = m[2];
+
+	//			counter = counter + 1;
+	//			delete [] m;
+	//		}
+	//	}
+
+	//	// Clear up the previous material indices array. 
+	//	for (int q = 0; q < GetNumberOfPoints() + 1; q++) {
+	//		delete [] materialIndices[q];
+	//	}
+	//	
+	//	materialIndices = newPointIndices;
+	//}
+
+	int* buffmi=(int*)malloc(3*(nb_points-index)*sizeof(int));
+	memcpy(buffmi,materialIndices+3*(index+1),3*(nb_points-index)*sizeof(int)); 
+	memcpy(materialIndices+3*index,buffmi,3*(nb_points-index)*sizeof(int)); 
+	materialIndices=(int*)realloc(materialIndices,3*nb_points*sizeof(int)); 
+
+	if (PointOn2ManifoldEdge.size() >= 0) {
+		RemovePointsFromPointsOn2ManifoldEdgeArray(index);
+	}
 }
 
 
@@ -2015,7 +2060,7 @@ for(i=0;i<c[0];i++)
 	if(fdist<dist_sav)  {   dist_sav=fdist; s_sav=fout[0]; t_sav=fout[1]; sav=i;    }
 	}
 
-//if(_finite(dist_sav)==0 || sav==-1) {free(ccpi); free(ppi); free(n); free(fa); free(fb); free(fd); return;}
+if(_finite(dist_sav)==0 || sav==-1) {free(ccpi); free(ppi); free(n); free(fa); free(fb); free(fd); return;}
 
 // return values
 free(closest->pts); free(closest->weights);
@@ -2126,7 +2171,7 @@ fdist=Closest(fa,fb,fc,fd,fe,ff,fout);
 if(fdist<dist_sav)  {   dist_sav=fdist; s_sav=fout[0]; t_sav=fout[1]; sav=5;    }
 }
 
-//if(_finite(dist_sav)==0 || sav==-1) {return;}
+if(_finite(dist_sav)==0 || sav==-1) {return;}
 
 // return values
 free(closest->pts); free(closest->weights);
@@ -3508,26 +3553,55 @@ void CSimplexSurf::UpdateNeighbors_c_vtkPolyData() {
 
 void CSimplexSurf::UpdateNeighbors() {	
 	int i;
-	//for (i = 0; i < nb_cells; i++) 
-	//	UpdateNeighbors(i);
+	// Meaning that this mesh is the whole multi-material mesh, and
+	// Gille's original UpdateNeighbors() code will not work. 
+	// So use other code. 
+	if (this->GetSplitMesh() == false) {
+		//for (i = 0; i < nb_cells; i++) 
+		//	UpdateNeighbors(i);
 	
-	UpdateNeighbors_vtkPolyData();
+		UpdateNeighbors_vtkPolyData();
 	
-	//for (i = 0; i < nb_points; i++) 
-	//	UpdateNeighbors_c(i);
+		//for (i = 0; i < nb_points; i++) 
+		//	UpdateNeighbors_c(i);
 
-	UpdateNeighbors_c_vtkPolyData();
+		UpdateNeighbors_c_vtkPolyData();
 
-	for (i = 0; i < nb_points; i++) 
-		UpdateNeighbors2(i);
+		for (i = 0; i < nb_points; i++) 
+			UpdateNeighbors2(i);
 
-	nb_points_border = 0; 
-	for (i = 0; i < nb_points; i++) 
-		if(neighbors_c[3 * i + 2] == -1) 
-			nb_points_border++;
+		nb_points_border = 0; 
+		for (i = 0; i < nb_points; i++) 
+			if(neighbors_c[3 * i + 2] == -1) 
+				nb_points_border++;
 
-	if (nb_points_border != 0) 
-		OrderNeighbors();
+		if (nb_points_border != 0) 
+			OrderNeighbors();
+	}
+	// Meaning that this mesh is basically a split and 
+	// true 2-Simplex mesh, so Gilles' original UpdateNeighbors() code should be used
+	else {
+		for (i = 0; i < nb_cells; i++) 
+			UpdateNeighbors(i);
+	
+		//UpdateNeighbors_vtkPolyData();
+	
+		for (i = 0; i < nb_points; i++) 
+			UpdateNeighbors_c(i);
+
+		//UpdateNeighbors_c_vtkPolyData();
+
+		for (i = 0; i < nb_points; i++) 
+			UpdateNeighbors2(i);
+
+		nb_points_border = 0; 
+		for (i = 0; i < nb_points; i++) 
+			if(neighbors_c[3 * i + 2] == -1) 
+				nb_points_border++;
+
+		if (nb_points_border != 0) 
+			OrderNeighbors();
+	}
 }
 
 void CSimplexSurf::UpdateNeighbors_c(int pt_index) {
@@ -3826,7 +3900,7 @@ for(i=0;i<nb_points;i++) if(isdR) vals[i]=axiallinks[i].dR; else vals[i]=axialli
 
 vtkStructuredPoints* im=RBF(nb_points,coords,vals,dim);
 vtkStructuredPointsWriter* writer=vtkStructuredPointsWriter::New();
-    writer->SetInput(im);
+    writer->SetInputData(im);
     writer->SetFileTypeToBinary();
     writer->SetFileName(filename);
     writer->Write();
@@ -4343,7 +4417,7 @@ PolyData->Update();
 triangle->Delete();
 
 vtkPolyDataNormals *normals=vtkPolyDataNormals::New();
-    normals->SetInput(PolyData);
+    normals->SetInputData(PolyData);
     normals->SplittingOff();
     normals->ConsistencyOn();
     normals->ComputePointNormalsOn();
@@ -6047,25 +6121,11 @@ P_float PPref[3],pref[3]={1./3.,1./3.,1./3.},C[3],*P,*P1,*P2,*P3,alpha=Alpha_Lap
 for(int i=0;i<nb_points;i++)
     {
 	neighb=GetNeighbors(i); 
-	P=GetPoint(i); 
-	P1=GetPoint(neighb[0]); 
-	P2=GetPoint(neighb[1]); 
-	P3=GetPoint(neighb[2]);
+	P=GetPoint(i); P1=GetPoint(neighb[0]); P2=GetPoint(neighb[1]); P3=GetPoint(neighb[2]);
 	
-	if(neighbors_c[3*i+2]==-1) {
-		C[0]=(P1[0]+P2[0])/2; 
-		C[1]=(P1[1]+P2[1])/2; 
-		C[2]=(P1[2]+P2[2])/2; 
-	}
-	else {
-		C[0]=(P1[0]+P2[0]+P3[0])/3; 
-		C[1]=(P1[1]+P2[1]+P3[1])/3;
-		C[2]=(P1[2]+P2[2]+P3[2])/3;
-	}
-	
-	PPref[0]=C[0]-P[0];
-	PPref[1]=C[1]-P[1];
-	PPref[2]=C[2]-P[2];
+	if(neighbors_c[3*i+2]==-1) {C[0]=(P1[0]+P2[0])/2; C[1]=(P1[1]+P2[1])/2; C[2]=(P1[2]+P2[2])/2; }
+	else {C[0]=(P1[0]+P2[0]+P3[0])/3; C[1]=(P1[1]+P2[1]+P3[1])/3; C[2]=(P1[2]+P2[2]+P3[2])/3;}
+	PPref[0]=C[0]-P[0];PPref[1]=C[1]-P[1];PPref[2]=C[2]-P[2];
 	
 	if(USEMULTIPLEPARTICLES) Add_multi(i,pref,0,alpha,extrapolation);
 	else Add_indep(i,PPref,alpha,extrapolation);
@@ -7380,12 +7440,29 @@ if(c2[1]!=c1[0] && c2[1]!=c1[1] && c2[1]!=c1[2]) c[0][1]=c2[1];
 if(c2[2]!=c1[0] && c2[2]!=c1[1] && c2[2]!=c1[2]) c[0][1]=c2[2]; 
 
 
+// -------------- MY CODE ------------------
+int deletedCell = -1;
+// -------------- MY CODE ------------------
+
+
 // modify cells
 if(c[0][0]!=-1) DeletePointInCell(c[0][0],p1);
 if(c[0][1]!=-1) DeletePointInCell(c[0][1],p2);
 
-if(c[1][1]==-1) {DeleteCell(c[1][0]); }
-else if(c[1][0]==-1) {DeleteCell(c[1][1]); }
+if(c[1][1]==-1) {
+	DeleteCell(c[1][0]); 
+
+	// -------------- MY CODE ------------------
+	deletedCell = c[1][0];
+	// -------------- MY CODE ------------------
+}
+else if(c[1][0]==-1) {
+	DeleteCell(c[1][1]); 
+
+	// -------------- MY CODE ------------------
+	deletedCell = c[1][1];
+	// -------------- MY CODE ------------------
+}
 else
 	{
 	int* cell=Concatenate(cells[c[1][0]],cells[c[1][1]],p1,p2); 
@@ -7393,7 +7470,19 @@ else
 	free(cell);
 	for(int i=0;i<3*nb_points;i++) if(neighbors_c[i]==c[1][1]) neighbors_c[i]=c[1][0];
 	DeleteCell(c[1][1]);
+
+	// -------------- MY CODE ------------------
+	deletedCell = c[1][1];
+	// -------------- MY CODE ------------------
+
 	}
+
+	// -------------- MY CODE ------------------
+	ofstream f("deletedCell.txt");
+	f << deletedCell << "\n";
+	f.close();
+	// -------------- MY CODE ------------------
+
 
 // Update Neighbors of order 1
 int *np1=GetNeighbors(p1),*np2=GetNeighbors(p2),*n;
@@ -7403,6 +7492,8 @@ if(np1[2]==p2) {n=GetNeighbors(np1[1]); if(n[0]==p1) n[0]=np1[0]; if(n[1]==p1) n
 if(np2[0]==p1) {n=GetNeighbors(np2[1]); if(n[0]==p2) n[0]=np2[2]; if(n[1]==p2) n[1]=np2[2]; if(n[2]==p2) n[2]=np2[2]; n=GetNeighbors(np2[2]); if(n[0]==p2) n[0]=np2[1]; if(n[1]==p2) n[1]=np2[1]; if(n[2]==p2) n[2]=np2[1];}
 if(np2[1]==p1) {n=GetNeighbors(np2[0]); if(n[0]==p2) n[0]=np2[2]; if(n[1]==p2) n[1]=np2[2]; if(n[2]==p2) n[2]=np2[2]; n=GetNeighbors(np2[2]); if(n[0]==p2) n[0]=np2[0]; if(n[1]==p2) n[1]=np2[0]; if(n[2]==p2) n[2]=np2[0];}
 if(np2[2]==p1) {n=GetNeighbors(np2[1]); if(n[0]==p2) n[0]=np2[0]; if(n[1]==p2) n[1]=np2[0]; if(n[2]==p2) n[2]=np2[0]; n=GetNeighbors(np2[0]); if(n[0]==p2) n[0]=np2[1]; if(n[1]==p2) n[1]=np2[1]; if(n[2]==p2) n[2]=np2[1];}
+
+
 
 // Delete points 
 if(p2>p1) {DeletePoint(p2); DeletePoint(p1);} else {DeletePoint(p1); DeletePoint(p2);}
@@ -8177,20 +8268,27 @@ P_float CSimplexSurf::getSurfaces_cell(int index) {
 	return surfaces_cell[index];
 }
 
+P_float* CSimplexSurf::getSurfaces_cell() {
+	return surfaces_cell;
+}
+
 vtkSmartPointer<vtkPolyData> CSimplexSurf::getAsVTKPolyData() {
+	double *d;
+	int *c, *mat;
+
 	vtkSmartPointer<vtkPolyData> pdata = vtkSmartPointer<vtkPolyData>::New();
 	vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
 	vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
 
 	for (int i = 0; i < nb_points; i++) {
-		double *d = GetPoint(i);
+		d = GetPoint(i);
 		points->InsertNextPoint(d[0], d[1], d[2]);
 	}
 
 	for (int j = 0; j < nb_cells; j++) {		
 		vtkSmartPointer<vtkIdList> list = vtkSmartPointer<vtkIdList>::New();
 
-		int *c = GetCell(j);
+		c = GetCell(j);
 		for (int k = 1; k <= c[0]; k++) {
 			list->InsertNextId(c[k]);
 		}
@@ -8221,7 +8319,7 @@ vtkSmartPointer<vtkPolyData> CSimplexSurf::getAsVTKPolyData() {
 	scalars->SetName("scalars");
 	
 	for (int mi = 0; mi < GetNumberOfPoints(); mi++) {
-		int *mat = GetPointMaterialIndices(mi);
+		mat = GetPointMaterialIndices(mi);
 		matvals1->SetValue(mi, mat[0]);
 		matvals2->SetValue(mi, mat[1]);
 		scalars->SetValue(mi, mat[2]);
@@ -8248,9 +8346,6 @@ vtkSmartPointer<vtkPolyData> CSimplexSurf::getAsVTKPolyData() {
 		pdata->GetPointData()->AddArray(originalIds);
 	}
 
-
-	
-
 	pdata->BuildCells();
 	pdata->BuildLinks();
 	pdata->Update();
@@ -8275,6 +8370,54 @@ void CSimplexSurf::verify3PointConnectivity() {
 	for (int i = 0; i < pdata->GetNumberOfPoints(); i++) {
 		
 	}
+}
+
+/**
+ * This function is used to populate a vector of bools
+ * Each entry indicates whether the corresponding point is on a 
+ * 2 manifold edge or not. This function is used when IsSplitMesh == false
+ * meaning that the simplex mesh is a multi-material simplex mesh
+ * containing non-manifold edges. 
+ */
+void CSimplexSurf::UpdatePointsOn2ManifoldEdgeArray() {
+	vtkSmartPointer<vtkPolyData> pdata = getAsVTKPolyData();
+
+	for (int i = 0; i < pdata->GetNumberOfPoints(); i++) {
+		vtkSmartPointer<vtkIdList> cellList = vtkSmartPointer<vtkIdList>::New();
+		pdata->GetPointCells(i, cellList);
+
+		if (cellList->GetNumberOfIds() == 3) {
+			PointOn2ManifoldEdge.push_back(true);
+		}
+		else {
+			PointOn2ManifoldEdge.push_back(false);
+		}
+	}
+}
+
+/**
+ * Removes the given index from the PointOn2ManifoldEdge vector. 
+ */
+void CSimplexSurf::RemovePointsFromPointsOn2ManifoldEdgeArray(int index) {
+	if (index >= 0 && index < PointOn2ManifoldEdge.size()) {
+		PointOn2ManifoldEdge.erase(PointOn2ManifoldEdge.begin() + index);
+	}
+	else {
+		std::cerr << "\nERROR: Index out of bounds for PointsOn2ManifoldEdge vector\n" << std::endl;
+	}
+}
+
+/** 
+ * GetSplitMesh() == true means that the mesh is a pure 2-simplex mesh.
+ * So all points are supposed to be on 2-manifold edges.
+ * GetSplitMesh() == false means that it is a multi-material simplex mesh
+ * which can have non-manifold edges. 
+ */
+bool CSimplexSurf::IsPointOn2ManifoldEdge(int index) {
+	if (GetSplitMesh() == false) {
+		return PointOn2ManifoldEdge.at(index);
+	}
+	else return true;
 }
 
 /**

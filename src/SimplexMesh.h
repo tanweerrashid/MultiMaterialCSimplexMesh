@@ -80,7 +80,7 @@ public:
     vtkUnstructuredGrid* GetUnstructuredGrid();
     void UpdateUnstructuredGridPoints(); virtual void UpdateUnstructuredGrid(); virtual void UpdateUnstructuredGridCells();
     virtual vtkPolyData* GetPolyData(int lift);
-	vtkUnstructuredGrid* GetOBB();
+	vtkUnstructuredGrid* CSimplexMesh::GetOBB();
 
     void SetGamma(P_float gam);    void SetTimeStep(P_float tstep);
     virtual void Equilibrium(); virtual void TimeStep();  
@@ -96,7 +96,7 @@ public:
 	void AllocatePointMaterialIndices();
 	int* GetPointMaterialIndices(int index);
 	void SetPointMaterialIndices(int index, int mat0, int mat1, int scalar);
-	
+		
 	void AllocateMultiMaterialNeighbors(int matLowerRange, int matUpperRange);
 	void SetMultiMaterialNeighbors(int matIndex, int ptIndex, int n0, int n1, int n2);
 	int* GetMultiMaterialNeighbors(int matIndex, int ptIndex);
@@ -111,10 +111,13 @@ public:
 	void SetOriginalPointIndex(int pointIndex, int originalIndex); 
 	int GetOriginalPointIndex(int pointIndex);
 	
+	bool GetHasMultiMaterialIndices();
+	void SetHasMultiMaterialIndices(bool b);
+	
 	
 private:
 	//int* neighbors;   // 1-neighbors
-	int **materialIndices; // Size is number of points. Array is of the format [mat0][mat1][scalar]
+	
 	int **multiMaterialNeighbors; //
 	bool *isMultiMaterialPoints; // An array to indicate whether a point is multimaterial or not. 
 
@@ -125,7 +128,13 @@ private:
 	bool isSplitMesh; 
 	int *originalPointIndices; // Original point indices of the split mesh's points. 
 	
+	// Indicates whether the materialIndices** array is populated or not. 
+	bool hasMultiMaterialIndices;
+
+
 protected:
+	//int **materialIndices; // Size is number of points. Array is of the format [mat0][mat1][scalar]
+	int *materialIndices; // Size is number of points. Format is the same as P_float* points array. [P0_mat0][P0_mat1][P0_scalar][P1_mat0][P1_mat1][P1_scalar][P2_mat0][P2_mat1][P2_scalar]...
 
 // variables
 	bool USEFORCES;

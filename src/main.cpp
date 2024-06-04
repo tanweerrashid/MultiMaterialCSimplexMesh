@@ -6,6 +6,7 @@
 #include "SimplexMesh.h"
 #include "SimplexSurf.h"
 #include "Deformation.h"
+#include "MMCSimplexSurf.h"
 
 #include <vtkSmartPointer.h>
 #include <vtkPolyData.h>
@@ -21,6 +22,7 @@
 #include <vtkPointData.h>
 #include <vtkDataArray.h>
 
+#include <vtkFeatureEdges.h>
 #include <vtkPolygon.h>
 #include <vtkTriangle.h>
 #include <vtkStructuredPoints.h>
@@ -43,29 +45,15 @@
 
 #include "CSimplexMeshConverter.h"
 
+
+#include <vtkDiskSource.h>
+
 using namespace std;
 
 P_float dotproduct(P_float u[3], P_float v[3]) {return (u[0]*v[0]+u[1]*v[1]+u[2]*v[2]);}
 void crossproduct( P_float cp[3], P_float u[3], P_float v[3]) {cp[0]=u[1]*v[2]-u[2]*v[1]; cp[1]=u[2]*v[0]-u[0]*v[2]; cp[2]=u[0]*v[1]-u[1]*v[0];}
 void crossproduct( P_float cp[3], const P_float u[3], const P_float v[3]) {cp[0]=u[1]*v[2]-u[2]*v[1]; cp[1]=u[2]*v[0]-u[0]*v[2]; cp[2]=u[0]*v[1]-u[1]*v[0];}
 
-
-/*vtkStructuredPoints* Load_dMRI(const char* filename) {
-	vtkStructuredPoints *dMRI = vtkStructuredPoints::New();
-
-	vtkSmartPointer<vtkStructuredPointsReader> dMRI_reader = vtkSmartPointer<vtkStructuredPointsReader>::New();
-	dMRI_reader->SetFileName(filename);
-	dMRI_reader->Update();
-
-	vtkSmartPointer<vtkImageCast> Cast = vtkSmartPointer<vtkImageCast>::New(); 
-	Cast->SetInput(dMRI_reader->GetOutput()); 
-	Cast->SetOutputScalarTypeToUnsignedShort(); 
-	Cast->Update(); 
-		
-	dMRI->DeepCopy(Cast->GetOutput());
-		
-	return dMRI;
-}*/
 
 vtkStructuredPoints* Load_dMRI(const char* filename) {
 	vtkStructuredPoints *dMRI = vtkStructuredPoints::New();
@@ -74,14 +62,10 @@ vtkStructuredPoints* Load_dMRI(const char* filename) {
 	dMRI_reader->SetFileName(filename);
 	dMRI_reader->Update();
 
-	vtkSmartPointer<vtkImageShiftScale> Cast = vtkSmartPointer<vtkImageShiftScale>::New(); 
-	vtkSmartPointer<vtkStructuredPoints> vol = dMRI_reader->GetOutput();
-	double *range = vol->GetPointData()->GetArray(0)->GetRange();
-
-	Cast->SetInput(vol); 
-	Cast->SetScale(VTK_UNSIGNED_SHORT_MAX / (range[1] - range[0]));
+	vtkSmartPointer<vtkImageCast> Cast = vtkSmartPointer<vtkImageCast>::New(); 
+	Cast->SetInputData(dMRI_reader->GetOutput()); 
 	Cast->SetOutputScalarTypeToUnsignedShort(); 
-	Cast->Update();
+	Cast->Update(); 
 		
 	dMRI->DeepCopy(Cast->GetOutput());
 		
@@ -96,7 +80,7 @@ CSimplexSurf* generateSphere(double R) {
 	
 	// icosaedre
 	double al = 2 * asin(cos(PI / 5) / sin(PI / 3));	// angle d'inclinaison
-	double l = (2 * R) / (tan(PI / 5) * tan(al / 2));	// longueur d'une arï¿½te
+	double l = (2 * R) / (tan(PI / 5) * tan(al / 2));	// longueur d'une arête
 	double k = (2 * R * R - l * l) / (2 * R);						// plan d'intersection
 	double r = sqrt(R * R - k * k);					// rayon du cercle d'intersection
 	double da = 2 * PI / 5;	
@@ -232,6 +216,50 @@ CSimplexSurf* generateSyntheticSimpleMultiMaterialBox() {
 	return cs;
 }
 
+CSimplexSurf* generateSyntheticSimpleSimplexBox() {
+	double pts[12][3] = {
+		{0, 0, 0},  // 0
+		{0, 1, 0},  // 1 
+		{0, 1, 1},  // 2
+		{0, 0, 1},  // 3
+		{1, 0, 0},  // 4
+		{1, 1, 0},  // 5
+		{1, 1, 1},  // 6
+		{1, 0, 1},  // 7
+	};
+
+	int cells[6][4] = {
+		{0, 1, 2, 3}, 
+		{0, 4, 5, 1}, 
+		{1, 5, 6, 2}, 
+		{4, 7, 6, 5}, 		
+		{0, 3, 7, 4}, 
+		{3, 2, 6, 7}
+	};
+
+	CSimplexSurf *cs = new(CSimplexSurf);
+	cs->Free();
+	cs->Allocate(8, 6);
+
+	// Set points
+	for (int i = 0; i < 8; i++) {
+		cs->SetPoint(i, pts[i][0], pts[i][1], pts[i][2]);
+	}
+
+	// Set cells
+	for (int i = 0; i < 6; i++) {
+		cs->SetCell(i, 4, cells[i]);
+	}
+
+	cs->UpdateNeighbors();
+	cs->ComputeVolume();
+	cs->Equilibrium();
+	cs->UpdateParams();
+	cs->UpdateMass();
+	cs->UpdateNormals();
+	return cs;
+}
+
 vtkStructuredPoints* loadVTKStructuredPointsVolume(const char *filename) {
 	vtkStructuredPoints *ret = vtkStructuredPoints::New();
 
@@ -243,79 +271,17 @@ vtkStructuredPoints* loadVTKStructuredPointsVolume(const char *filename) {
 	return ret;
 }
 
-void LoadVTKCSimplexMeshAndWriteAsTriangularMesh(std::string inputFilename, std::string outputFilename) {
-	vtkSmartPointer<vtkPolyDataReader> reader = vtkSmartPointer<vtkPolyDataReader>::New();
-	reader->SetFileName(inputFilename.c_str());
-	reader->Update();
+int BasicDeformation(std::string triangleMeshFilename, std::string volumeFilename, int numberOfDeformableMeshes) {
 
-	vtkSmartPointer<vtkPolyData> pdata = reader->GetOutput();
+	//std::string triangleMeshFilename = "E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\Cropped_Labels_And_Colins27_t1\\Object_39-47_MM2M_World.vtk";
+	//std::string volumeFilename = "E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\Cropped_Labels_And_Colins27_t1\\colins_t1_STN_SN_cropped.vtk";
+	//std::string triangleMeshFilename = "E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\Object39_close_open\\Object39_close_open_2Manifold_Smoother_Transformed.vtk";
+	//std::string volumeFilename = "E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\Object39_close_open\\labels_on_colin_Nov2010_minc2_mincreshape_xyz_Object39.vtk";
 
-	CSimplexSurf *simplex = new(CSimplexSurf);
-	simplex->Free();
-	simplex->Allocate(pdata->GetNumberOfPoints(), pdata->GetNumberOfCells());
+	//int numberOfDeformableMeshes = 2;
 	
-	for (int i = 0; i < pdata->GetNumberOfPoints(); i++) {
-		double *d = pdata->GetPoint(i);
-		simplex->SetPoint(i, d);
-	}
-
-	for (int i = 0; i < pdata->GetNumberOfCells(); i++) {
-		vtkSmartPointer<vtkCell> cell = pdata->GetCell(i);
-
-		int n = cell->GetNumberOfPoints();
-		int *c = new int[n];
-		
-		for (int j = 0; j < n; j++) {
-			c[j] = cell->GetPointId(j);
-
-			simplex->SetCell(i, n, c);
-		}
-	}
-
-	simplex->UpdateNeighbors();
-	simplex->ComputeVolume();
-	simplex->Equilibrium();
-	simplex->UpdateParams();
-	simplex->UpdateMass();
-
-	simplex->SaveVTKMesh(outputFilename.c_str(), -1);
-
-}
-
-int main() {
-    
-    CSimplexSurf *c = new(CSimplexSurf);
-    c->Free();
-    c->Allocate(512, 258);
-    c->LoadMesh("/home/rashidt/Downloads/mesh1.defm");
-    c->UpdateAll();
-    c->writeCSimplexMeshAsVTKPolyData("/home/rashidt/Desktop/mesh1.vtk");
-    
-    
-    
-    
-	std::string triangleMeshFilename = "/home/rashidt/Desktop/decimation/SyntheticTwoBoxes_CDT_MM2M.vtk";
-	std::string volumeFilename = "/home/rashidt/Desktop/simplexDeformation/MultiMaterialTwoBoxesEqualSideBySide.vtk";
-        std::string outputDir = "/home/rashidt/Desktop/simplexDeformation/DeformResults";
-
-
 	vtkSmartPointer<vtkPolyData> pdata = convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh(triangleMeshFilename);
-	
-	int numberOfDeformableMeshes = 2;
-
-        
-        // For changing the direction of the normals of the split meshes. 
-	std::vector<bool> flipNormals;
-	flipNormals.push_back(false);
-	flipNormals.push_back(false);
-        
-        // meshes[] is the array contain the whole multimaterial mesh and the simplex mesh. 
-        // mesh[0] is the whole mesh
-        // mesh[1] is the first of the split mesh 
-        // mesh[2] is the second of the split mesh. 
-        // etc.
-	CSimplexSurf **meshes = Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(pdata, flipNormals);
-	
+	CSimplexSurf **meshes = Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(pdata);
 	Deformation **def = new Deformation*[numberOfDeformableMeshes + 1]; // def[0] is a dummy. Used for consistency for meshes[i]
 
 	for (int m = 0; m <= numberOfDeformableMeshes; m++) {
@@ -323,242 +289,138 @@ int main() {
 		ss << triangleMeshFilename.substr(0, triangleMeshFilename.size() - 4) << "_Simplex_Split[" << m << "].vtk";
 		meshes[m]->writeCSimplexMeshAsVTKPolyData(ss.str());
 	}
-        
-        /**
-         * At this point, check the generated split simplex meshes for normal consistency. 
-         * Ideally, the normals should be pointing inwards for both meshes. 
-         * Step 1. Use paraview for this step. Load meshes[1], meshes[2], ... into paraview
-         * Step 2. Then apply the "Normals Glyph" filter to each mesh[i]. 
-         * Step 3. If the normals are not pointing inwards, then change the true/false values in flipNormals above. 
-         */
 
 
 	for (int i = 1; i <= numberOfDeformableMeshes; i++) {
-		
+
 		meshes[i]->UpdateNeighbors();
 		meshes[i]->ComputeVolume();
 		meshes[i]->Equilibrium();
 		meshes[i]->UpdateParams();
 		meshes[i]->UpdateMass();
-			
+
+		meshes[i]->SetGamma(0.0);
 		meshes[i]->SetTimeStep(0.1);
 
-
-		// Apply mesh parameters one by one
-		if (i == 1) { // For mesh[1]
-
-			// Load image file.
-			vtkStructuredPoints *dMRI = Load_dMRI(volumeFilename.c_str());
-			//vtkStructuredPoints *dMRI = Load_dMRI("C:\\Users\\Tanweer Rashid\\Desktop\\DeformationResults_V2\\Striatum_GP_Right\\t1.brain.inorm-subvolume-scale_1.vtk");
+		// Load image file.
+		vtkStructuredPoints *dMRI = Load_dMRI(volumeFilename.c_str());
 	
-			// Smooth image
-			double difffactor = 0.2;
-			double difftresh = 50.0;
-			int nbit = 4;
-			int dim = 3;
-			SmoothVolAnisotropic(dMRI, difffactor, difftresh, nbit, dim);
+		// Smooth image
+		double difffactor = 0.2;
+		double difftresh = 50.0;
+		int nbit = 4;
+		int dim = 3;
+		SmoothVolAnisotropic(dMRI, difffactor, difftresh, nbit, dim);
 		
 	
-			// Compute gradient image
-			vtkStructuredPoints *dMRI_grad = GradientMagnitude(dMRI, dim);
-			//vtkStructuredPoints *dMRI_grad = Gradient(dMRI, dim);
+		// Compute gradient image
+		vtkStructuredPoints *dMRI_grad = GradientMagnitude(dMRI, dim);
+		//vtkStructuredPoints *dMRI_grad = Gradient(dMRI, dim);
 
-			//vtkSmartPointer<vtkStructuredPointsWriter> rw_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
-			//rw_writer->SetInput(dMRI);
-			//std::stringstream rwss;
-			//rwss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_ReadWrite_Mesh[" << i << "].vtk";
-			//rw_writer->SetFileName(rwss.str().c_str());
-			//rw_writer->Write();
+		//vtkSmartPointer<vtkStructuredPointsWriter> rw_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
+		//rw_writer->SetInput(dMRI);
+		//std::stringstream rwss;
+		//rwss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_ReadWrite.vtk";
+		//rw_writer->SetFileName(rwss.str().c_str());
+		//rw_writer->Write();
 
-			//vtkSmartPointer<vtkStructuredPointsWriter> sp_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
-			//sp_writer->SetInput(dMRI);
-			//std::stringstream spss;
-			//spss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_SmoothAnisotropicVol_Mesh[" << i << "].vtk";
-			//sp_writer->SetFileName(spss.str().c_str());
-			//sp_writer->Write();
+		//vtkSmartPointer<vtkStructuredPointsWriter> sp_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
+		//sp_writer->SetInput(dMRI);
+		//std::stringstream spss;
+		//spss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_SmoothAnisotropicVol.vtk";
+		//sp_writer->SetFileName(spss.str().c_str());
+		//sp_writer->Write();
 
-			//vtkSmartPointer<vtkStructuredPointsWriter> g_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
-			//g_writer->SetInput(dMRI_grad);
-			//std::stringstream grss;
-			//grss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_GradientMagnitude_Mesh[" << i << "].vtk";
-			////grss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_Gradient_Mesh[" << i << "].vtk";
-			//g_writer->SetFileName(grss.str().c_str());
-			//g_writer->Write();
+		//vtkSmartPointer<vtkStructuredPointsWriter> g_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
+		//g_writer->SetInput(dMRI_grad);
+		//std::stringstream grss;
+		//grss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_GradientMagnitude.vtk";
+		////grss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_Gradient.vtk";
+		//g_writer->SetFileName(grss.str().c_str());
+		//g_writer->Write();
 	
-			// Compute bounding box
-			P_float bounds[3][2]; 
-			GetBoundingBox(dMRI, NULL, bounds);
+		// Compute bounding box
+		P_float bounds[3][2]; 
+		GetBoundingBox(dMRI, NULL, bounds);
 
-			// Set image and gradient image for mesh
-			meshes[i]->SetMRI(dMRI, dMRI_grad, 0, bounds); 
-			meshes[i]->SetMRI_GradientMRI(dMRI_grad); 
+		// Set image and gradient image for mesh
+		meshes[i]->SetMRI(dMRI, dMRI_grad, 0, bounds); 
+		meshes[i]->SetMRI_GradientMRI(dMRI_grad); 
 
-			// Set internal force parameters
+		//// Set force parameters
+		//bool val_surfequ = true;
+		//double alpha_surfequ = 0.5;
+		//double alpha_lim_surfequ = 0.1;
+		//double alpha_incr_surfequ = 0.0;
+		//meshes[i]->SetInternalForceSurfEqu(val_surfequ, alpha_surfequ, alpha_lim_surfequ, alpha_incr_surfequ);
 
-			//bool val_surfequ = true;
-			//double alpha_surfequ = 0.3;
-			//double alpha_lim_surfequ = 0.1;
-			//double alpha_incr_surfequ = 0.0;
-			//meshes[i]->SetInternalForceSurfEqu(val_surfequ, alpha_surfequ, alpha_lim_surfequ, alpha_incr_surfequ);
-
-			//bool val_refshape = true;
-			//double alpha_refshape = 0.1;
-			//double alpha_lim_refshape = 0.4;
-			//double alpha_incr_refshape = 0.0;
-			//meshes[i]->SetInternalForceRefShape(val_refshape, alpha_refshape, alpha_lim_refshape, alpha_incr_refshape);
+		//bool val_refshape = true;
+		//double alpha_refshape = 0.5;
+		//double alpha_lim_refshape = 0.3;
+		//double alpha_incr_refshape = 0.0;
+		//meshes[i]->SetInternalForceRefShape(val_refshape, alpha_refshape, alpha_lim_refshape, alpha_incr_refshape);
 	
-			bool val_laplacian = true;
-			double alpha_laplacian = 0.3;
-			double alpha_lim_alpha_laplacian = 0.1;
-			double alpha_incr_alpha_laplacian = 0.0;
-			meshes[i]->SetInternalForceLaplacian(val_laplacian, alpha_laplacian, alpha_lim_alpha_laplacian, alpha_incr_alpha_laplacian);
+		bool val_laplacian = true;
+		double alpha_laplacian = 0.3;
+		double alpha_lim_alpha_laplacian = 0.1;
+		double alpha_incr_alpha_laplacian = 0.0;
+		meshes[i]->SetInternalForceLaplacian(val_laplacian, alpha_laplacian, alpha_lim_alpha_laplacian, alpha_incr_alpha_laplacian);
 	
-			//bool val_laplacianF = true;
-			//double alpha_laplacianF = 0.8;
-			//double alpha_lim_alpha_laplacianF = 0.1;
-			//double alpha_incr_alpha_laplacianF = 0.0;
-			//meshes[i]->SetInternalForceLaplacianFlexion(val_laplacianF, alpha_laplacianF, alpha_lim_alpha_laplacianF, alpha_incr_alpha_laplacianF);
 		
 
-			// Set external force parameters
-			double size_gradientmri = 0.1;
-			double depth_gradientmri = 5;
-			bool opposite = false;
-			meshes[i]->SetGamma(0.0);
-				
-			bool val_gradientmri = true;
-			double alpha_gradientmri = 0.8;
-			double alpha_lim_gradientmri = 0.6;
-			double alpha_incr_gradientmri = 0.0;
-			vtkStructuredPoints *vol = dMRI_grad;
-		
-			meshes[i]->SetExternalForceGradientMRI(val_gradientmri, size_gradientmri, depth_gradientmri, alpha_gradientmri, alpha_lim_gradientmri, alpha_incr_gradientmri, vol, opposite);
-
-		
-			// Regularization
-			bool en = false;
-			bool smooth = true;
-			int transform = 3;
-			double lambda = 0.0;
-			double lambda_lim = 0.7;
-
-			double lambda_incr = 400.00;
-			lambda_incr = (lambda_lim - (double)lambda) / lambda_incr;
-			meshes[i]->SetExternalForceRegularization(en, smooth, transform, lambda, lambda_lim, lambda_incr);
-
-			double timestep = 0.1;
-			double alpha = 1.0;
-			def[i] = new Deformation(meshes[i], timestep, alpha);
+		double size_gradientmri;	
+		double depth_gradientmri;// = 20;
+		bool opposite;
+		if (i == 1) {
+			depth_gradientmri = 5;
+			size_gradientmri = 0.1;
+			opposite = false;
 		}
-
-		else if (i == 2) { // For mesh[2]
-
-			// Load image file.
-			vtkStructuredPoints *dMRI = Load_dMRI(volumeFilename.c_str());
-	
-			// Smooth image
-			double difffactor = 0.2;
-			double difftresh = 50.0;
-			int nbit = 4;
-			int dim = 3;
-			SmoothVolAnisotropic(dMRI, difffactor, difftresh, nbit, dim);
-		
-	
-			// Compute gradient image
-			vtkStructuredPoints *dMRI_grad = GradientMagnitude(dMRI, dim);
-			//vtkStructuredPoints *dMRI_grad = Gradient(dMRI, dim);
-
-			//vtkSmartPointer<vtkStructuredPointsWriter> rw_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
-			//rw_writer->SetInput(dMRI);
-			//std::stringstream rwss;
-			//rwss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_ReadWrite_Mesh[" << i << "].vtk";
-			//rw_writer->SetFileName(rwss.str().c_str());
-			//rw_writer->Write();
-
-			//vtkSmartPointer<vtkStructuredPointsWriter> sp_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
-			//sp_writer->SetInput(dMRI);
-			//std::stringstream spss;
-			//spss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_SmoothAnisotropicVol_Mesh[" << i << "].vtk";
-			//sp_writer->SetFileName(spss.str().c_str());
-			//sp_writer->Write();
-
-			//vtkSmartPointer<vtkStructuredPointsWriter> g_writer = vtkSmartPointer<vtkStructuredPointsWriter>::New();
-			//g_writer->SetInput(dMRI_grad);
-			//std::stringstream grss;
-			//grss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_GradientMagnitude_Mesh[" << i << "].vtk";
-			////grss << volumeFilename.substr(0, volumeFilename.size() - 4) << "_Gradient_Mesh[" << i << "].vtk";
-			//g_writer->SetFileName(grss.str().c_str());
-			//g_writer->Write();
-	
-			// Compute bounding box
-			P_float bounds[3][2]; 
-			GetBoundingBox(dMRI, NULL, bounds);
-
-			// Set image and gradient image for mesh
-			meshes[i]->SetMRI(dMRI, dMRI_grad, 0, bounds); 
-			meshes[i]->SetMRI_GradientMRI(dMRI_grad); 
-
-			// Set internal force parameters
-
-			//bool val_surfequ = true;
-			//double alpha_surfequ = 0.3;
-			//double alpha_lim_surfequ = 0.1;
-			//double alpha_incr_surfequ = 0.0;
-			//meshes[i]->SetInternalForceSurfEqu(val_surfequ, alpha_surfequ, alpha_lim_surfequ, alpha_incr_surfequ);
-
-			//bool val_refshape = true;
-			//double alpha_refshape = 0.1;
-			//double alpha_lim_refshape = 0.4;
-			//double alpha_incr_refshape = 0.0;
-			//meshes[i]->SetInternalForceRefShape(val_refshape, alpha_refshape, alpha_lim_refshape, alpha_incr_refshape);
-	
-			bool val_laplacian = true;
-			double alpha_laplacian = 0.3;
-			double alpha_lim_alpha_laplacian = 0.1;
-			double alpha_incr_alpha_laplacian = 0.0;
-			meshes[i]->SetInternalForceLaplacian(val_laplacian, alpha_laplacian, alpha_lim_alpha_laplacian, alpha_incr_alpha_laplacian);
-	
-			//bool val_laplacianF = true;
-			//double alpha_laplacianF = 0.8;
-			//double alpha_lim_alpha_laplacianF = 0.1;
-			//double alpha_incr_alpha_laplacianF = 0.0;
-			//meshes[i]->SetInternalForceLaplacianFlexion(val_laplacianF, alpha_laplacianF, alpha_lim_alpha_laplacianF, alpha_incr_alpha_laplacianF);
-		
-
-			// Set external force parameters
-			double size_gradientmri = 0.1;
-			double depth_gradientmri = 5;
-			bool opposite = false;
-			meshes[i]->SetGamma(0.0);
-				
-			bool val_gradientmri = true;
-			double alpha_gradientmri = 0.8;
-			double alpha_lim_gradientmri = 0.6;
-			double alpha_incr_gradientmri = 0.0;
-			vtkStructuredPoints *vol = dMRI_grad;
-		
-			meshes[i]->SetExternalForceGradientMRI(val_gradientmri, size_gradientmri, depth_gradientmri, alpha_gradientmri, alpha_lim_gradientmri, alpha_incr_gradientmri, vol, opposite);
-
-		
-			// Regularization
-			bool en = false;
-			bool smooth = true;
-			int transform = 3;
-			double lambda = 0.0;
-			double lambda_lim = 0.7;
-
-			double lambda_incr = 400.00;
-			lambda_incr = (lambda_lim - (double)lambda) / lambda_incr;
-			meshes[i]->SetExternalForceRegularization(en, smooth, transform, lambda, lambda_lim, lambda_incr);
-
-			double timestep = 0.1;
-			double alpha = 1.0;
-			def[i] = new Deformation(meshes[i], timestep, alpha);
+		else if (i == 2) {
+			depth_gradientmri = 5;
+			size_gradientmri = 0.1;
+			opposite = false;
 		}
+		
+		bool val_gradientmri = true;
+		double alpha_gradientmri = 0.8;
+		double alpha_lim_gradientmri = 0.6;
+		double alpha_incr_gradientmri = 0.0;
+		vtkStructuredPoints *vol = dMRI_grad;
+		
+		meshes[i]->SetExternalForceGradientMRI(val_gradientmri, size_gradientmri, depth_gradientmri, alpha_gradientmri, alpha_lim_gradientmri, alpha_incr_gradientmri, vol, opposite);
+
+		
+		// Regularization
+		bool en = false;
+		bool smooth = true;
+		int transform = 3;
+		double lambda = 0.0;
+		double lambda_lim = 0.7;
+
+		double lambda_incr = 400.00;
+		lambda_incr = (lambda_lim - (double)lambda) / lambda_incr;
+		meshes[i]->SetExternalForceRegularization(en, smooth, transform, lambda, lambda_lim, lambda_incr);
+
+		double timestep = 0.1;
+		double alpha = 1.0;
+		//Deformation *def = new Deformation(meshes[i], timestep, alpha);
+		def[i] = new Deformation(meshes[i], timestep, alpha);
+	
+		//for (int iter = 0; iter <= 200; iter++) {
+		//	cout << "Iteration: " << iter << endl;
+		//	def->ImpEuler();
+
+		//	if (iter % 10 == 0) {
+		//		std::stringstream ss;
+		//		ss << "DeformResults\\DeformedMesh_" << iter << ".vtk";
+		//		def->getMesh()->writeCSimplexMeshAsVTKPolyData(ss.str().c_str());
+		//	}
+		//}
 	}
 
 	cout << "\nBeginning deformation..." << endl;
-	for (int iter = 0; iter <= 500; iter++) {
+	for (int iter = 0; iter <= 200; iter++) {
 		for (int j = 1; j <= numberOfDeformableMeshes; j++) { // Do the deformation for each split mesh. 
 			def[j]->ImpEuler();
 			
@@ -599,9 +461,9 @@ int main() {
 			//writer->Write();
 
 		//	if (iter % 10 == 0) {
-			//std::stringstream ss;
-			//ss << outputDir << "/DeformedMesh_Split[" << j << "]_iter_" << iter << ".vtk";
-			//def[j]->getMesh()->writeCSimplexMeshAsVTKPolyData(ss.str().c_str());
+			std::stringstream ss;
+			ss << "DeformResults\\DeformedMesh_Split[" << j << "]_iter_" << iter << ".vtk";
+			def[j]->getMesh()->writeCSimplexMeshAsVTKPolyData(ss.str().c_str());
 				
 			cout << "  Iteration " << iter << " for mesh[" << j << "] complete." << endl;
 		}
@@ -656,10 +518,10 @@ int main() {
 		}
 
 		std::stringstream ss0;
-                ss0 << outputDir << "/DeformedMesh_Split[0]_iter_" << iter << ".vtk";
+	    ss0 << "DeformResults\\DeformedMesh_Split[0]_iter_" << iter << ".vtk";
 		meshes[0]->writeCSimplexMeshAsVTKPolyData(ss0.str().c_str());
 
-		//Feedback stage: Set the new points on the split meshes. 
+		//Feedback stage
 		for (int a = 1; a <= numberOfDeformableMeshes; a++) {
 			// Regular points, i.e. points between material and background
 			// are essentially the same in split meshes and parent mesh.
@@ -676,18 +538,283 @@ int main() {
 			}
 
 			//std::stringstream ssc;
-			//ssc << outputDir << "/DeformedMesh_Split[" << a << "]_iter_" << iter << "_Feedback.vtk";
+			//ssc << "DeformResults\\DeformedMesh_Split[" << a << "]_iter_" << iter << "_Feedback.vtk";
 			//c->writeCSimplexMeshAsVTKPolyData(ssc.str().c_str());
 		}
+
+		// Free up memory, avoid memory leaks
+		for (int w = 0; w < meshes[0]->GetNumberOfPoints(); w++) {
+			delete [] newPoints[w];
+		}
+
+		delete [] newPoints;
+		delete [] ptsCounter;
 	}
 
 
-	cout << "\n\nExecution completed. " << endl;
-	//getchar();
+
+
+
+
+	/*
+	vtkSmartPointer<vtkPolyData> pdata = convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\MultiMaterial_Deformation_TwoBoxes\\TwoBoxesUnequalSideBySide_MM2M_Transformed.vtk");
+	//vtkSmartPointer<vtkPolyData> pdata = convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\Object39_close_open\\Object39_close_open_2Manifold_Smoother_Transformed.vtk");
+
+	vtkSmartPointer<vtkDataArray> matsArray0 = pdata->GetPointData()->GetArray(0);
+	vtkSmartPointer<vtkDataArray> matsArray1 = pdata->GetPointData()->GetArray(1);
+	vtkSmartPointer<vtkDataArray> scalarArray = pdata->GetPointData()->GetArray(2);
+
+	double *range0 = matsArray0->GetRange();
+	double *range1 = matsArray1->GetRange();
+	
+	int maxRange = -1;
+	if (range0[1] >= range1[1]) {
+		maxRange = (int)range0[1];
+	}
+	else {
+		maxRange = (int)range1[1];
+	}
+    
+	pdata->BuildCells();
+	pdata->BuildLinks();
+
+	CSimplexSurf *cs = new(CSimplexSurf);
+	cs->Free();
+	cs->Allocate(pdata->GetNumberOfPoints(), pdata->GetNumberOfCells());
+	
+	if ((matsArray0->GetNumberOfTuples() > 0) && (matsArray1->GetNumberOfTuples() > 0) && (scalarArray->GetNumberOfTuples() > 0)) { // If the dataArray has material data
+		for (int i = 0; i < pdata->GetNumberOfPoints(); i++) {
+			double *d = pdata->GetPoint(i);
+			cs->SetPoint(i, d);
+
+			double m0 = matsArray0->GetTuple1(i);
+			double m1 = matsArray1->GetTuple1(i);
+			double scalar = scalarArray->GetTuple1(i);
+
+			cs->SetPointMaterialIndices(i, (int)m0, (int)m1, (int)scalar);
+		}
+		cs->AllocateMultiMaterialNeighbors(2, maxRange); // Material indices always start from 2
+	}
+	else { // If the dataArray does not have any material data. 
+		for (int i = 0; i < pdata->GetNumberOfPoints(); i++) {
+			double *d = pdata->GetPoint(i);
+			cs->SetPoint(i, d);
+		}
+	}
+
+	for (int i = 0; i < pdata->GetNumberOfCells(); i++) {
+		vtkSmartPointer<vtkCell> cell = pdata->GetCell(i);
+
+		int n = cell->GetNumberOfPoints();
+		int *c = new int[n];
+		
+		for (int j = 0; j < n; j++) {
+			c[j] = cell->GetPointId(j);
+
+			cs->SetCell(i, n, c);
+		}
+	}
+	
+	cs->writeCSimplexMeshAsVTKPolyData("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\MultiMaterial_Deformation_TwoBoxes\\TwoBoxesUnequalSideBySide_MM2M_Transformed_Simplex.vtk");
+	
+
+	//vtkSmartPointer<vtkPolyData> pdata = convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\MultiMaterial_Deformation_TwoBoxes\\TwoBoxesUnequalSideBySide_MM2M_Transformed.vtk");
+	//CSimplexSurf **meshes = SplitMultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(pdata);
+
+
+
+	cs->SaveMesh("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\SyntheticSimpleMultiMaterialBox\\SyntheticSimpleMultiMaterialBox_Simplex.defm", true, false);
+	cs->writeCSimplexMeshAsVTKPolyData("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\SyntheticSimpleMultiMaterialBox\\SyntheticSimpleMultiMaterialBox_Simplex.vtk");
+
+	//cs->SaveMesh("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\Object39_close_open\\Object39_close_open_2Manifold_Smoother_Transformed_Simplex.defm", true, false);
+	//cs->writeCSimplexMeshAsVTKPolyData("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\Object39_close_open\\Object39_close_open_2Manifold_Smoother_Transformed_Simplex.vtk");
+
+	cs->UpdateNeighbors();
+	cs->ComputeVolume();
+	cs->Equilibrium();
+	cs->UpdateParams();
+	cs->UpdateMass();
+	
+	cs->SaveMesh("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\SyntheticSimpleMultiMaterialBox\\SyntheticSimpleMultiMaterialBox_Simplex.defm", true, false);
+	cs->writeCSimplexMeshAsVTKPolyData("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\SyntheticSimpleMultiMaterialBox\\SyntheticSimpleMultiMaterialBox_Simplex.vtk");
+
+
+	//cs = cs->IncreaseResolution();
+	//cs->writeCSimplexMeshAsVTKPolyData("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\SyntheticSimpleMultiMaterialBox\\SyntheticSimpleMultiMaterialBox_Simplex_Res1.vtk");
+	
+	
+	//CSimplexSurf *cs = new(CSimplexSurf);
+	//cs->LoadMesh("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\Object39\\Object39_2Manifold_Smoother_Transformed_Half.defm");
+	*/
+	
+	
+	/*
+	cs->SetGamma(0.0);
+	cs->SetTimeStep(1.0);
+
+	
+	cs->UpdateNeighbors();
+	cs->ComputeVolume();
+	cs->Equilibrium();
+	cs->UpdateParams();
+	cs->UpdateMass();
+	
+
+	double *n = cs->GetNormal(4);
+	cout << n[0] << ", " << n[1] << ", " << n[2] << endl;
+
+	//double *mass = cs->GetMass(10);
+	//cout << mass[0] << ", " << mass[1] << ", " << mass[2] << endl;
+
+//	cs->SaveMesh("translatedmesh.defm", true, false);
+
+	//cs->LoadMesh("Sphere_R100_Res1.defm");
+	//cs->writeCSimplexMeshAsVTKPolyData("DeformResults\\OriginalMesh.vtk");
+
+	//cs->SetTimeStep(1.0);
+
+
+	
+	// Load image file. 
+	vtkStructuredPoints *dMRI = Load_dMRI("E:\\workspace\\CSimplexMesh\\CSimplexMesh\\data\\SyntheticSimpleMultiMaterialBox\\Vol_SyntheticSimpleMultiMaterialBox.vtk");
+	
+	// Smooth image
+	double difffactor = 0.2;
+	double difftresh = 50.0;
+	int nbit = 4;
+	int dim = 3;
+	SmoothVolAnisotropic(dMRI, difffactor, difftresh, nbit, dim);
+	
+	// Compute gradient image
+	vtkStructuredPoints *dMRI_grad = Gradient(dMRI, dim);
+	
+	// Compute bounding box
+	P_float bounds[3][2]; 
+	GetBoundingBox(dMRI, NULL, bounds);
+
+	// Set image and gradient image for mesh
+	cs->SetMRI(dMRI, dMRI_grad, 0, bounds); 
+	cs->SetMRI_GradientMRI(dMRI_grad); 
+
+	// Set force parameters
+	bool val_surfequ = true;
+	double alpha_surfequ = 0.9;
+	double alpha_lim_surfequ = 0.1;
+	double alpha_incr_surfequ = 0.0;
+	cs->SetInternalForceSurfEqu(val_surfequ, alpha_surfequ, alpha_lim_surfequ, alpha_incr_surfequ);
+
+	bool val_refshape = true;
+	double alpha_refshape = 0.9;
+	double alpha_lim_refshape = 0.3;
+	double alpha_incr_refshape = 0.0;
+	cs->SetInternalForceRefShape(val_refshape, alpha_refshape, alpha_lim_refshape, alpha_incr_refshape);
+	
+	bool val_laplacian = true;
+	double alpha_laplacian = 0.9;
+	double alpha_lim_alpha_laplacian = 0.1;
+	double alpha_incr_alpha_laplacian = 0.0;
+	cs->SetInternalForceLaplacian(val_laplacian, alpha_laplacian, alpha_lim_alpha_laplacian, alpha_incr_alpha_laplacian);
+	
+	bool val_gradientmri = true;
+	double size_gradientmri = 0.1;
+	double depth_gradientmri = 20;
+	double alpha_gradientmri = 0.8;
+	double alpha_lim_gradientmri = 0.6;
+	double alpha_incr_gradientmri = 0.0;
+	vtkStructuredPoints *vol = dMRI_grad;
+	bool opposite = true;
+	cs->SetExternalForceGradientMRI(val_gradientmri, size_gradientmri, depth_gradientmri, alpha_gradientmri, alpha_lim_gradientmri, alpha_incr_gradientmri, vol, opposite);
+
+	// Regularization
+	bool en = false;
+	bool smooth = true;
+	int transform = 3;
+	double lambda = 0.0;
+	double lambda_lim = 0.7;
+	double lambda_incr = 400.00;
+	lambda_incr = (lambda_lim - (double)lambda) / lambda_incr;
+	cs->SetExternalForceRegularization(en, smooth, transform, lambda, lambda_lim, lambda_incr);
+
+	double timestep = 0.1;
+	double alpha = 1.0;
+	Deformation *def = new Deformation(cs, timestep, alpha);
+	
+	for (int i = 0; i <= 200; i++) {
+		cout << "Iteration: " << i << endl;
+		def->ImpEuler();
+
+		if (i % 10 == 0) {
+			std::stringstream ss;
+			ss << "DeformResults\\DeformedMesh_" << i << ".vtk";
+			def->getMesh()->writeCSimplexMeshAsVTKPolyData(ss.str().c_str());
+		}
+	}
+	*/
+
 	return 0;
 }
 
+int main() {
 
+	CSimplexSurf *a = new(CSimplexSurf);
+	a->LoadMesh("C:\\Users\\Tanweer Rashid\\Downloads\\mesh1.defm");
+	a->UpdateAll();
+
+	a->writeCSimplexMeshAsVTKPolyData("C:\\Users\\Tanweer Rashid\\Desktop\\mesh1.vtk");
+
+
+	//CSimplexSurf **a = Load_MultiMaterialCSimplexMeshFromVTKPolyData("data\\mesh[0]_Tmp_AfterSurfaceDecimation.vtk");
+	//
+	//MMCSimplexSurf *aa = new MMCSimplexSurf(a, 2);
+	//aa->GetMesh(0)->writeCSimplexMeshAsVTKPolyData("read.vtk");
+
+	std::string triangularFilename = "C:\\Users\\Tanweer Rashid\\Desktop\\DeformationResults_V2\\Left_SN_STN_Again\\Object_39-47_Left_padded_step0.9_L_39_47_V_0.7_0.7_m2b_0.4_m2m_0.3_MM2M_World_AffineRegistered2.vtk";
+	vtkSmartPointer<vtkPolyData> mmSimplex = convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh(triangularFilename);
+		
+	CSimplexSurf **meshes = Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(mmSimplex);
+
+	MMCSimplexSurf *cm = new MMCSimplexSurf(meshes, 2);
+	//cm->GetMesh(0)->writeCSimplexMeshAsVTKPolyData("data/mesh[0].vtk");
+	//cm->GetMesh(1)->writeCSimplexMeshAsVTKPolyData("data/mesh[1].vtk");
+	//cm->GetMesh(2)->writeCSimplexMeshAsVTKPolyData("data/mesh[2].vtk");
+		
+
+	//cm->GetMesh(0)->writeCSimplexMeshAsVTKPolyData("data/mesh[0].vtk");
+	//cm->GetMesh(1)->writeCSimplexMeshAsVTKPolyData("data/mesh[1].vtk");
+	//cm->GetMesh(2)->writeCSimplexMeshAsVTKPolyData("data/mesh[2].vtk");
+
+	
+
+	cm->DecimateByRemovingTriangularCells(0);
+	cm->DecimateByRemovingTriangularCells(0);
+	cm->GetMesh(0)->writeCSimplexMeshAsVTKPolyData("C:\\Users\\Tanweer Rashid\\Desktop\\DeformationResults_V2\\Left_SN_STN_Again\\Simplified.vtk");
+	
+	
+		
+	
+	//cm->DecimateByMergingSmallSurfaceAreaCells(0, false);
+	
+	int i = 0;
+	while (i < 300) {
+		cout << "Iteration: " << i << " ";
+		cm->DecimateBySubMesh(0, 0, 0);
+
+
+		cm->GetMesh(0)->writeCSimplexMeshAsVTKPolyData("data\\mesh[0]_Tmp_AfterSurfaceDecimation.vtk");
+
+		i = i + 1;
+	}
+	
+
+
+	//cm->GetMesh(0)->TO1(21940, 21934);
+	cm->GetMesh(0)->writeCSimplexMeshAsVTKPolyData("data\\mesh[0]_AfterSurfaceAreaDecimation.vtk");
+
+
+	cout << "\n\nExecution completed. " << endl;
+	getchar();
+	return 0;
+}
 
 
 
@@ -721,7 +848,7 @@ void visualizeSimplex(CSimplexSurf *c) {
 	vp->SetPolys(cells);
 
 	vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
-	mapper->SetInput(vp);
+	mapper->SetInputData(vp);
 
 	vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
 	actor->SetMapper(mapper);
@@ -811,11 +938,11 @@ void computeCellSurfaceAreaUsingVTKMassProperties(CSimplexSurf *cs) {
 		pdata->SetPolys(cellArray);
 
 		vtkSmartPointer<vtkTriangleFilter> trifilter = vtkSmartPointer<vtkTriangleFilter>::New();
-		trifilter->SetInput(pdata);
+		trifilter->SetInputData(pdata);
 		trifilter->Update();
 
 		vtkSmartPointer<vtkMassProperties> massP = vtkSmartPointer<vtkMassProperties>::New();
-		massP->SetInput(trifilter->GetOutput());
+		massP->SetInputData(trifilter->GetOutput());
 		massP->Update();
 
 		f << massP->GetSurfaceArea() << "; " << cs->getSurfaces_cell(i) << "\n";
@@ -823,3 +950,75 @@ void computeCellSurfaceAreaUsingVTKMassProperties(CSimplexSurf *cs) {
 	
 	f.close();
 }
+
+/*
+void main() {
+	vtkSmartPointer<vtkPolyDataReader> reader = vtkSmartPointer<vtkPolyDataReader>::New();
+	reader->SetFileName("C:\\Users\\Tanweer Rashid\\Desktop\\Object39_Decimation_Results\\CloseOpen_Smoothed\\Object39_close_open_2Manifold_Smoother_SimplexOriented.vtk");
+	reader->Update();
+	
+	vtkSmartPointer<vtkPolyData> pdata = reader->GetOutput();
+	pdata->BuildCells();
+	pdata->BuildLinks();
+
+	CSimplexSurf *cs = new(CSimplexSurf); 
+
+	cs->Free();
+	cs->Allocate(pdata->GetNumberOfPoints(), pdata->GetNumberOfCells());
+	
+	for (int i = 0; i < pdata->GetNumberOfPoints(); i++) {
+		double *d = pdata->GetPoint(i);
+		cs->SetPoint(i, d);
+	}
+
+	for (int i = 0; i < pdata->GetNumberOfCells(); i++) {
+		vtkSmartPointer<vtkCell> cell = pdata->GetCell(i);
+
+		int n = cell->GetNumberOfPoints();
+		int *c = new int[n];
+		
+		//c[0] = n;
+		for (int j = 0; j < n; j++) {
+			c[j] = cell->GetPointId(j);
+
+			cs->SetCell(i, n, c);
+		}
+	}
+
+	
+	//CSimplexSurf *cs = new(CSimplexSurf);
+	//cs->LoadMesh("C:\\Users\\Tanweer Rashid\\Desktop\\Object26_part2_ConvertedToSimplex_Oriented.defm");
+	cs->UpdateNeighbors();
+	cs->UpdateAll();
+
+	int numPts_original = cs->GetNumberOfPoints();
+	int numCells_original = cs->GetNumberOfCells();
+
+	cs->decimateByRemovingTriangularCells();
+	//cs->writeCSimplexMeshAsVTKPolyData("C:\\Users\\Tanweer Rashid\\Desktop\\Object26_part2_ConvertedToSimplex_Oriented_TRI_Decimated.vtk");
+	//cs->SaveMesh("C:\\Users\\Tanweer Rashid\\Desktop\\Object26_part2_ConvertedToSimplex_Oriented_TRI_Decimated.defm", true, false);
+
+	//cs->decimateByMergingSmallSurfaceAreaCells(0.1);
+	//cs->decimateByMergingSmallSurfaceAreaCells(0.5);
+	//cs->decimateByMergingSmallSurfaceAreaCells(0.25);
+	
+	cs->writeCSimplexMeshAsVTKPolyData("C:\\Users\\Tanweer Rashid\\Desktop\\Object39_Decimation_Results\\CloseOpen_Smoothed\\Object39_close_open_2Manifold_Smoother_SimplexOriented_Decimated.vtk");
+	cs->SaveMesh("C:\\Users\\Tanweer Rashid\\Desktop\\Object39_Decimation_Results\\CloseOpen_Smoothed\\Object39_close_open_2Manifold_Smoother_SimplexOriented_Decimated.defm", true, false);
+
+	//visualizeSimplex(cs);
+	
+	int numPts_decimated = cs->GetNumberOfPoints();
+	int numCells_decimated = cs->GetNumberOfCells();
+
+	cout << "Points decimation % " << (100 * (numPts_original - numPts_decimated) / numPts_original) << endl;
+	cout << "Cells decimation % " << (100 * (numCells_original - numCells_decimated) / numCells_original) << endl;
+
+
+	//vtkSmartPointer<vtkPolyData> pdata = convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh("C:\\Users\\Tanweer Rashid\\Desktop\\Object39_Decimation_Results\\CloseOpen_Smoothed\\Object39_close_open_2Manifold_Smoother.vtk");
+	//writeOrVisualizePolyData(pdata, true, true, "C:\\Users\\Tanweer Rashid\\Desktop\\Object39_Decimation_Results\\CloseOpen_Smoothed\\Object39_close_open_2Manifold_Smoother_SimplexOriented.vtk");
+
+	cout << "Execution completed." << endl;
+	getchar();
+	
+}
+*/

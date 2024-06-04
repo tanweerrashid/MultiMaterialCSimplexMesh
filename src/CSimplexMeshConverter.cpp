@@ -193,12 +193,12 @@ void writeOrVisualizePolyData(vtkSmartPointer<vtkPolyData> simplex, bool write, 
     if (write) {
         vtkSmartPointer<vtkPolyDataWriter> writer = vtkSmartPointer<vtkPolyDataWriter>::New();
         writer->SetFileName(output.c_str());
-        writer->SetInput(simplex);
+        writer->SetInputData(simplex);
         writer->Update();
     }
     if (visualize) {
         vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
-        mapper->SetInput(simplex);
+        mapper->SetInputData(simplex);
 
         vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
         actor->SetMapper(mapper);
@@ -421,6 +421,9 @@ vtkSmartPointer<vtkIdList> orderCellList(vtkSmartPointer<vtkIdList> list, vtkSma
  * @param output - Output vtkPolyData file location. 
  */
 vtkSmartPointer<vtkPolyData> convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh(std::string input) {
+	double p0[3], p1[3], p2[3];
+	double cellCentroid[3];
+
     vtkSmartPointer<vtkPolyDataReader> reader = vtkSmartPointer<vtkPolyDataReader>::New();
     reader->SetFileName(input.c_str());
     reader->Update();
@@ -462,12 +465,12 @@ vtkSmartPointer<vtkPolyData> convertMultiMaterialTriangularMeshToMultiMaterialSi
         vtkSmartPointer<vtkCell> cell = pdata->GetCell(i);
         vtkSmartPointer<vtkIdList> cellPoints = cell->GetPointIds();
 
-        double p0[3], p1[3], p2[3];
+        //double p0[3], p1[3], p2[3];
         points->GetPoint(cellPoints->GetId(0), p0);
         points->GetPoint(cellPoints->GetId(1), p1);
         points->GetPoint(cellPoints->GetId(2), p2);
 
-        double cellCentroid[3];
+        //double cellCentroid[3];
         cellCentroid[0] = (p0[0] + p1[0] + p2[0]) / 3;
         cellCentroid[1] = (p0[1] + p1[1] + p2[1]) / 3;
         cellCentroid[2] = (p0[2] + p1[2] + p2[2]) / 3;
@@ -598,7 +601,7 @@ vtkSmartPointer<vtkPolyData> convertMultiMaterialTriangularMeshToMultiMaterialSi
 	orientPolyData->NonManifoldTraversalOff();
 	orientPolyData->ComputeCellNormalsOff();
 	
-	orientPolyData->SetInput(simplex);
+	orientPolyData->SetInputData(simplex);
 	orientPolyData->Update();
 
 	vtkSmartPointer<vtkPolyData> oriented = orientPolyData->GetOutput();
@@ -619,7 +622,7 @@ vtkSmartPointer<vtkPolyData> convertMultiMaterialTriangularMeshToMultiMaterialSi
  * Each new vtkPolyData contains their three arrays (Mat1 Index, Mat2 Index and Scalar)
  * plus an additional array which contains the original point indices. 
  */
-std::vector<vtkSmartPointer<vtkPolyData> > splitMesh(vtkSmartPointer<vtkPolyData> pdata, std::vector<bool> flipNormals) {
+std::vector<vtkSmartPointer<vtkPolyData> > splitMesh(vtkSmartPointer<vtkPolyData> pdata) {
 	std::vector<vtkSmartPointer<vtkPolyData> > ret;
 	
 	pdata->BuildCells();
@@ -678,7 +681,7 @@ std::vector<vtkSmartPointer<vtkPolyData> > splitMesh(vtkSmartPointer<vtkPolyData
 
 		vtkSmartPointer<vtkExtractSelection> extractSelection = vtkSmartPointer<vtkExtractSelection>::New();
 		extractSelection->SetInputConnection(0, pdata->GetProducerPort());
-		extractSelection->SetInput(1, selection);
+		extractSelection->SetInputData(1, selection);
 		extractSelection->Update();
 
 		vtkSmartPointer<vtkUnstructuredGrid> selected = vtkSmartPointer<vtkUnstructuredGrid>::New();
@@ -735,21 +738,27 @@ std::vector<vtkSmartPointer<vtkPolyData> > splitMesh(vtkSmartPointer<vtkPolyData
 		vtkSmartPointer<vtkPolyDataNormals> orientPolyData = vtkSmartPointer<vtkPolyDataNormals>::New();
 		orientPolyData->SplittingOff();
 		orientPolyData->ConsistencyOn();
-
-		if (flipNormals.at(currentMaterial - 2) == true) {
-			orientPolyData->FlipNormalsOn();
-		}
-		else {
-			orientPolyData->FlipNormalsOff();
-		}
-
+		orientPolyData->FlipNormalsOff();
 		orientPolyData->NonManifoldTraversalOff();
 		orientPolyData->ComputeCellNormalsOff();
 	
-		orientPolyData->SetInput(iMatMesh);
+		orientPolyData->SetInputData(iMatMesh);
 		orientPolyData->Update();
 
 		vtkSmartPointer<vtkPolyData> oriented = orientPolyData->GetOutput();
+		for (int ar = 0; ar < oriented->GetPointData()->GetNumberOfArrays(); ar++) 	{
+			oriented->GetPointData()->RemoveArray(ar);
+		}
+		for (int ar = 0; ar < oriented->GetCellData()->GetNumberOfArrays(); ar++) 	{
+			oriented->GetCellData()->RemoveArray(ar);
+		}
+
+
+		oriented->GetPointData()->AddArray(dataArray0);
+		oriented->GetPointData()->AddArray(dataArray1);
+		oriented->GetPointData()->AddArray(dataArray2);
+		oriented->GetPointData()->AddArray(dataArray3);
+
 
 		if (oriented->GetNumberOfCells() != iMatMesh->GetNumberOfCells() && oriented->GetNumberOfPoints() != iMatMesh->GetNumberOfPoints()) {
 			std::cerr << "ERROR: Mesh orientation using vtkPolyDataNormals resulted in a new mesh with different number of cells and/or points." << endl;
@@ -758,7 +767,6 @@ std::vector<vtkSmartPointer<vtkPolyData> > splitMesh(vtkSmartPointer<vtkPolyData
 		ret.push_back(oriented);
 	}
 
-
 	return ret;
 }
 
@@ -766,7 +774,7 @@ std::vector<vtkSmartPointer<vtkPolyData> > splitMesh(vtkSmartPointer<vtkPolyData
  * The input is a multi-material simplex mesh in vtkPolyData format. This polydata should
  * come from convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh()
  */
-CSimplexSurf** Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(vtkSmartPointer<vtkPolyData> multimaterialSimplex, std::vector<bool> flipNormals) {
+CSimplexSurf** Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(vtkSmartPointer<vtkPolyData> multimaterialSimplex) {
 	multimaterialSimplex->BuildCells();
 	multimaterialSimplex->BuildLinks();
 
@@ -828,17 +836,17 @@ CSimplexSurf** Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(vtkSmar
 		}
 	}
 
-	//ret[0]->UpdateNeighbors();
-	//ret[0]->ComputeVolume();
-	//ret[0]->Equilibrium();
-	//ret[0]->UpdateParams();
-	//ret[0]->UpdateMass();
+	ret[0]->UpdateNeighbors();
+	ret[0]->ComputeVolume();
+	ret[0]->Equilibrium();
+	ret[0]->UpdateParams();
+	ret[0]->UpdateMass();
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	// Now split each material mesh as a regular 2-simplex mesh
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	
-	std::vector<vtkSmartPointer<vtkPolyData> > otherMeshes = splitMesh(multimaterialSimplex, flipNormals);
+	std::vector<vtkSmartPointer<vtkPolyData> > otherMeshes = splitMesh(multimaterialSimplex);
 	std::cout << "Number of split meshes: " << otherMeshes.size() << std::endl;
 
 	int count = 1;
@@ -847,16 +855,17 @@ CSimplexSurf** Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(vtkSmar
 		iMesh->BuildCells();
 		iMesh->BuildLinks();
 
+		//vtkSmartPointer<vtkPolyDataWriter> writer = vtkSmartPointer<vtkPolyDataWriter>::New();
+		//writer->SetFileName("data\\tempvtk.vtk");
+		//writer->SetInput(iMesh);
+		//writer->Write();
+
 		// Retrieve material and point data
 		vtkSmartPointer<vtkDataArray> m0Array = iMesh->GetPointData()->GetArray(0);
 		vtkSmartPointer<vtkDataArray> m1Array = iMesh->GetPointData()->GetArray(1);
 		vtkSmartPointer<vtkDataArray> sArray = iMesh->GetPointData()->GetArray(2);
 		vtkSmartPointer<vtkDataArray> originalPointIndicesArray = iMesh->GetPointData()->GetArray(3);
 		
-		//for (int a = 0; a < iMesh->GetPointData()->GetNumberOfArrays(); a++) {
-		//	std::cout << "Array name: " << iMesh->GetPointData()->GetArrayName(a) << std::endl;
-		//}
-
 		ret[count] = new(CSimplexSurf);
 		ret[count]->Free();
 		ret[count]->Allocate(iMesh->GetNumberOfPoints(), iMesh->GetNumberOfCells());
@@ -890,11 +899,11 @@ CSimplexSurf** Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(vtkSmar
 			}
 		}
 
-		//ret[count]->UpdateNeighbors();
-		//ret[count]->ComputeVolume();
-		//ret[count]->Equilibrium();
-		//ret[count]->UpdateParams();
-		//ret[count]->UpdateMass();
+		ret[count]->UpdateNeighbors();
+		ret[count]->ComputeVolume();
+		ret[count]->Equilibrium();
+		ret[count]->UpdateParams();
+		ret[count]->UpdateMass();
 
 		count = count + 1;
 	}
@@ -908,9 +917,12 @@ CSimplexSurf** Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(vtkSmar
 	return ret;
 }
 
-vtkSmartPointer<vtkPolyData> LoadMMSimplexMeshFromVTKPolyData(std::string filename) {
+CSimplexSurf** Load_MultiMaterialCSimplexMeshFromVTKPolyData(std::string filename) {
 	vtkSmartPointer<vtkPolyDataReader> reader = vtkSmartPointer<vtkPolyDataReader>::New();
 	reader->SetFileName(filename.c_str());
 	reader->Update();
-	return reader->GetOutput();
+
+	vtkSmartPointer<vtkPolyData> MMSimplexMesh = reader->GetOutput();
+
+	return Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(MMSimplexMesh);
 }

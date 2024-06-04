@@ -51,6 +51,6 @@ vtkSmartPointer<vtkIdList> orderCellList(vtkSmartPointer<vtkIdList> list, vtkSma
 
 vtkSmartPointer<vtkPolyData> convertMultiMaterialTriangularMeshToMultiMaterialSimplexMesh(std::string input);
 
-CSimplexSurf** Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(vtkSmartPointer<vtkPolyData> multimaterialSimplex, std::vector<bool> flipNormals);
+CSimplexSurf** Split_MultiMaterialSimplexMesh_Into_Separate_CSimplexMesh(vtkSmartPointer<vtkPolyData> multimaterialSimplex);
 
-vtkSmartPointer<vtkPolyData> LoadMMSimplexMeshFromVTKPolyData(std::string filename);
+CSimplexSurf** Load_MultiMaterialCSimplexMeshFromVTKPolyData(std::string filename);
